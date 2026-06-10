@@ -1,0 +1,211 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:DhcpFieldServer.ViewModels"
+        x:Class="DhcpFieldServer.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="MYLan — DHCP Field Server"
+        Width="820" Height="620"
+        MinWidth="700" MinHeight="500"
+        WindowStartupLocation="CenterScreen"
+        Background="#1a1a2e">
+
+    <Window.Styles>
+        <Style Selector="TextBlock.heading">
+            <Setter Property="Foreground" Value="#e0e0e0" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontSize" Value="13" />
+        </Style>
+        <Style Selector="TextBlock.label">
+            <Setter Property="Foreground" Value="#aaaaaa" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="TextBlock.brand">
+            <Setter Property="Foreground" Value="#00b4d8" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="FontSize" Value="18" />
+        </Style>
+        <Style Selector="Border.card">
+            <Setter Property="Background" Value="#16213e" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="16" />
+        </Style>
+        <Style Selector="Button.primary">
+            <Setter Property="Background" Value="#0f3460" />
+            <Setter Property="Foreground" Value="#e0e0e0" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Padding" Value="16,8" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="Button.primary:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#1a5276" />
+        </Style>
+        <Style Selector="Button.danger">
+            <Setter Property="Background" Value="#6b1d1d" />
+            <Setter Property="Foreground" Value="#e0e0e0" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Padding" Value="16,8" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="Button.danger:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#922b2b" />
+        </Style>
+        <Style Selector="TextBox.config">
+            <Setter Property="Background" Value="#0f3460" />
+            <Setter Property="Foreground" Value="#e0e0e0" />
+            <Setter Property="BorderBrush" Value="#2a4a7f" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Padding" Value="6,4" />
+            <Setter Property="FontFamily" Value="Consolas, Menlo, monospace" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <Style Selector="ComboBox">
+            <Setter Property="Background" Value="#0f3460" />
+            <Setter Property="Foreground" Value="#e0e0e0" />
+            <Setter Property="BorderBrush" Value="#2a4a7f" />
+            <Setter Property="CornerRadius" Value="4" />
+        </Style>
+        <Style Selector="DataGridColumnHeader">
+            <Setter Property="Background" Value="#0f3460" />
+            <Setter Property="Foreground" Value="#aaaaaa" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Padding" Value="8,4" />
+        </Style>
+        <Style Selector="DataGridRow">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#e0e0e0" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontFamily" Value="Consolas, Menlo, monospace" />
+        </Style>
+    </Window.Styles>
+
+    <Grid Margin="16" RowDefinitions="Auto,Auto,*,Auto">
+
+        <!-- Header -->
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+            <StackPanel Orientation="Horizontal" Spacing="10">
+                <TextBlock Classes="brand" Text="MYLan" VerticalAlignment="Center" />
+                <TextBlock Text="DHCP Field Server" Foreground="#888" FontSize="14"
+                           VerticalAlignment="Center" Margin="0,2,0,0" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <Ellipse Width="10" Height="10">
+                    <Ellipse.Fill>
+                        <SolidColorBrush Color="{Binding StatusColour}" />
+                    </Ellipse.Fill>
+                </Ellipse>
+                <TextBlock Text="{Binding StatusText}" Foreground="#e0e0e0" FontWeight="SemiBold" FontSize="13" />
+            </StackPanel>
+        </Grid>
+
+        <!-- Controls Row -->
+        <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+
+            <Border Classes="card">
+                <Grid RowDefinitions="Auto,12,Auto,12,Auto,12,Auto" ColumnDefinitions="Auto,8,*,16,Auto,8,*">
+
+                    <TextBlock Grid.Row="0" Grid.Column="0" Classes="label" Text="Adapter:" />
+                    <ComboBox Grid.Row="0" Grid.Column="2" Grid.ColumnSpan="5"
+                              ItemsSource="{Binding Adapters}"
+                              SelectedItem="{Binding SelectedAdapter}"
+                              HorizontalAlignment="Stretch" />
+
+                    <TextBlock Grid.Row="2" Grid.Column="0" Classes="label" Text="Server IP:" />
+                    <TextBox Grid.Row="2" Grid.Column="2" Classes="config"
+                             Text="{Binding ServerIp}" IsEnabled="{Binding !IsRunning}" />
+                    <TextBlock Grid.Row="2" Grid.Column="4" Classes="label" Text="Subnet:" />
+                    <TextBox Grid.Row="2" Grid.Column="6" Classes="config"
+                             Text="{Binding SubnetMask}" IsEnabled="{Binding !IsRunning}" />
+
+                    <TextBlock Grid.Row="4" Grid.Column="0" Classes="label" Text="Pool:" />
+                    <Grid Grid.Row="4" Grid.Column="2" ColumnDefinitions="*,Auto,*">
+                        <TextBox Grid.Column="0" Classes="config"
+                                 Text="{Binding PoolStart}" IsEnabled="{Binding !IsRunning}" />
+                        <TextBlock Grid.Column="1" Text=" – " Foreground="#666" VerticalAlignment="Center"
+                                   Margin="4,0" />
+                        <TextBox Grid.Column="2" Classes="config"
+                                 Text="{Binding PoolEnd}" IsEnabled="{Binding !IsRunning}" />
+                    </Grid>
+                    <TextBlock Grid.Row="4" Grid.Column="4" Classes="label" Text="DNS:" />
+                    <TextBox Grid.Row="4" Grid.Column="6" Classes="config"
+                             Text="{Binding DnsServer}" IsEnabled="{Binding !IsRunning}" />
+
+                    <TextBlock Grid.Row="6" Grid.Column="0" Classes="label" Text="Gateway:" />
+                    <TextBox Grid.Row="6" Grid.Column="2" Classes="config"
+                             Text="{Binding Gateway}" IsEnabled="{Binding !IsRunning}" />
+                </Grid>
+            </Border>
+
+            <StackPanel Grid.Column="1" Spacing="8" Margin="12,0,0,0" VerticalAlignment="Center">
+                <Button Classes="primary" Content="▶  Start" Width="120"
+                        Command="{Binding StartCommand}" />
+                <Button Classes="danger" Content="■  Stop" Width="120"
+                        Command="{Binding StopCommand}" IsEnabled="{Binding IsRunning}" />
+                <Button Content="↻  Refresh NICs" Width="120"
+                        Command="{Binding RefreshAdaptersCommand}"
+                        Background="#2a2a4a" Foreground="#aaa" CornerRadius="6"
+                        Padding="16,8" FontSize="11" />
+            </StackPanel>
+        </Grid>
+
+        <!-- Main content: Log + Leases -->
+        <Grid Grid.Row="2" ColumnDefinitions="3*,12,2*">
+
+            <Border Classes="card" Grid.Column="0">
+                <DockPanel>
+                    <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,8">
+                        <TextBlock Classes="heading" Text="Activity Log" />
+                        <Button Grid.Column="1" Content="Clear" FontSize="11"
+                                Command="{Binding ClearLogCommand}"
+                                Background="Transparent" Foreground="#666"
+                                Padding="8,2" CornerRadius="4" />
+                    </Grid>
+                    <TextBox Text="{Binding LogText}"
+                             IsReadOnly="True"
+                             AcceptsReturn="True"
+                             TextWrapping="Wrap"
+                             FontFamily="Consolas, Menlo, monospace"
+                             FontSize="11"
+                             Background="#111830"
+                             Foreground="#a8d8a8"
+                             BorderBrush="#1a2a4a"
+                             CornerRadius="4"
+                             Padding="8"
+                             CaretIndex="{Binding LogText.Length, Mode=OneWay}" />
+                </DockPanel>
+            </Border>
+
+            <Border Classes="card" Grid.Column="2">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Classes="heading" Text="Active Leases" Margin="0,0,0,8" />
+                    <DataGrid ItemsSource="{Binding Leases}"
+                              IsReadOnly="True"
+                              HeadersVisibility="Column"
+                              GridLinesVisibility="Horizontal"
+                              Background="Transparent"
+                              BorderThickness="0"
+                              CanUserResizeColumns="True"
+                              CanUserSortColumns="False">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="MAC Address" Binding="{Binding Mac}" Width="*" />
+                            <DataGridTextColumn Header="IP" Binding="{Binding IpAddress}" Width="110" />
+                            <DataGridTextColumn Header="Expires" Binding="{Binding Expiry}" Width="75" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </Border>
+        </Grid>
+
+        <!-- Footer -->
+        <Grid Grid.Row="3" Margin="0,8,0,0" ColumnDefinitions="*,Auto">
+            <TextBlock Text="{Binding PlatformHint}"
+                       Foreground="#cc7700" FontSize="11"
+                       IsVisible="{Binding PlatformHint.Length}"
+                       VerticalAlignment="Center" />
+            <TextBlock Grid.Column="1"
+                       Text="Event Tech Research Ltd"
+                       Foreground="#444" FontSize="11"
+                       VerticalAlignment="Center" />
+        </Grid>
+    </Grid>
+</Window>

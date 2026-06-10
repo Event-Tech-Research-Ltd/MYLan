@@ -1,21 +1,36 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <UseWPF>true</UseWPF>
-    <ApplicationIcon>DHCP.ico</ApplicationIcon>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\DHCP.ico</ApplicationIcon>
+    <RootNamespace>DhcpFieldServer</RootNamespace>
+    <AssemblyName>MYLan</AssemblyName>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+
+    <Version>2.1.0</Version>
+    <Authors>Rob Handyside - Event Tech Research Ltd</Authors>
+    <Product>MYLan DHCP Field Server</Product>
+    <Description>A lightweight portable DHCP server for production networks</Description>
+    <Copyright>Copyright © 2025-2026 Event Tech Research Ltd</Copyright>
   </PropertyGroup>
 
   <ItemGroup>
-    <None Remove="Assets\favicon.ico" />
+    <PackageReference Include="Avalonia" Version="11.2.3" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.2.3" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.2.3" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.2.3" />
+    <PackageReference Include="Avalonia.Controls.DataGrid" Version="11.2.3" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <PackageReference Include="Avalonia.Diagnostics" Version="11.2.3" Condition="'$(Configuration)' == 'Debug'" />
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="Assets\favicon.ico" />
-    <Content Include="DHCP.ico" />
+    <AvaloniaResource Include="Assets\**" />
   </ItemGroup>
 
 </Project>
