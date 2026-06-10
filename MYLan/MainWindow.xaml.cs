@@ -1,7 +1,10 @@
 using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net.NetworkInformation;
 using System.Windows;
+using System.Windows.Media;
 
 namespace DhcpFieldServer
 {
@@ -9,11 +12,34 @@ namespace DhcpFieldServer
     {
         private DhcpServer? _server;
 
+        private static readonly string LeaseFilePath = GetWritableLeaseFilePath();
+
+        private static string GetWritableLeaseFilePath()
+        {
+            string primary = Path.Combine(AppContext.BaseDirectory, "mylan-leases.json");
+            try
+            {
+                string testFile = primary + ".writetest";
+                File.WriteAllText(testFile, "");
+                File.Delete(testFile);
+                return primary;
+            }
+            catch
+            {
+                string fallback = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "MYLan", "mylan-leases.json");
+                Directory.CreateDirectory(Path.GetDirectoryName(fallback)!);
+                return fallback;
+            }
+        }
+
+        private static readonly int MaxLogLines = 2000;
+
         public MainWindow()
         {
             InitializeComponent();
             LoadAdapters();
-            StatusText.Text = "Idle";
         }
 
         private void LoadAdapters()
@@ -27,9 +53,7 @@ namespace DhcpFieldServer
                     n.OperationalStatus == OperationalStatus.Up);
 
             foreach (var nic in nics)
-            {
                 ServerNicCombo.Items.Add(nic.Name);
-            }
 
             if (ServerNicCombo.Items.Count > 0)
                 ServerNicCombo.SelectedIndex = 0;
@@ -39,19 +63,17 @@ namespace DhcpFieldServer
         {
             if (ServerNicCombo.SelectedItem == null)
             {
-                MessageBox.Show("Select a server network adapter first.", "DHCP Field Server",
+                MessageBox.Show("Select a server network adapter first.", "MYLan",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
             string adapterName = ServerNicCombo.SelectedItem.ToString()!;
 
-            AppendLog($"[INFO] Using adapter: {adapterName}");
+            AppendLog($"Using adapter: {adapterName}");
+            AppendLog("Setting static IP 192.168.1.1/255.255.255.0 on adapter...");
 
-            // Set static IP on the chosen adapter: 192.168.1.1 / 255.255.255.0
-            AppendLog("[INFO] Setting static IP 192.168.1.1/255.255.255.0 on adapter (via netsh)...");
             bool ipOk = NetworkHelper.SetStaticIp(adapterName, "192.168.1.1", "255.255.255.0");
-
             if (!ipOk)
             {
                 AppendLog("[ERROR] Failed to set static IP. Are you running as Administrator?");
@@ -60,7 +82,8 @@ namespace DhcpFieldServer
                 return;
             }
 
-            // Start DHCP server
+            AppendLog("Static IP configured successfully.");
+
             try
             {
                 _server = new DhcpServer(
@@ -69,17 +92,31 @@ namespace DhcpFieldServer
                     poolEnd: "192.168.1.150",
                     subnetMask: "255.255.255.0",
                     routerIp: "192.168.1.1",
-                    dnsIp: "8.8.8.8");
+                    dnsIp: "8.8.8.8",
+                    leaseFilePath: LeaseFilePath);
 
                 _server.Log += msg =>
                 {
-                    Dispatcher.Invoke(() => AppendLog(msg));
+                    Dispatcher.BeginInvoke(() =>
+                    {
+                        AppendLog(msg);
+                        RefreshLeases();
+                    });
                 };
 
                 _server.Start();
-                StatusText.Text = "DHCP Running";
+
+                SetStatus("DHCP Running", "#4CAF50");
                 StartBtn.IsEnabled = false;
                 StopBtn.IsEnabled = true;
+                ServerNicCombo.IsEnabled = false;
+
+                // Show restored lease count
+                int restored = _server.ActiveLeases.Count;
+                if (restored > 0)
+                    AppendLog($"{restored} lease(s) restored from previous session.");
+
+                RefreshLeases();
             }
             catch (Exception ex)
             {
@@ -91,23 +128,58 @@ namespace DhcpFieldServer
 
         private void StopBtn_Click(object sender, RoutedEventArgs e)
         {
-            try
-            {
-                _server?.Stop();
-            }
-            catch (Exception ex)
-            {
-                AppendLog("[ERROR] " + ex.Message);
-            }
+            try { _server?.Stop(); }
+            catch (Exception ex) { AppendLog("[ERROR] " + ex.Message); }
 
-            StatusText.Text = "Stopped";
+            SetStatus("Stopped", "#F44336");
             StartBtn.IsEnabled = true;
             StopBtn.IsEnabled = false;
+            ServerNicCombo.IsEnabled = true;
+            _server = null;
+        }
+
+        private void RefreshBtn_Click(object sender, RoutedEventArgs e)
+        {
+            LoadAdapters();
+        }
+
+        private void ClearLogBtn_Click(object sender, RoutedEventArgs e)
+        {
+            LogBox.Clear();
+        }
+
+        private void RefreshLeases()
+        {
+            if (_server == null) return;
+
+            var items = _server.ActiveLeases.Select(l => new
+            {
+                l.Mac,
+                l.IpAddress,
+                Expiry = l.ExpiryUtc.ToLocalTime().ToString("HH:mm:ss")
+            }).ToList();
+
+            LeaseGrid.ItemsSource = items;
+        }
+
+        private void SetStatus(string text, string hexColour)
+        {
+            StatusText.Text = text;
+            var colour = (Color)ColorConverter.ConvertFromString(hexColour);
+            StatusDot.Fill = new SolidColorBrush(colour);
         }
 
         private void AppendLog(string message)
         {
             LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
+
+            // Cap log to prevent unbounded memory growth during long sessions
+            if (LogBox.LineCount > MaxLogLines)
+            {
+                int trimTo = LogBox.GetCharacterIndexFromLineIndex(LogBox.LineCount - MaxLogLines);
+                LogBox.Text = LogBox.Text.Substring(trimTo);
+            }
+
             LogBox.ScrollToEnd();
         }
     }

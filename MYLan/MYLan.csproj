@@ -7,9 +7,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <ApplicationIcon>DHCP.ico</ApplicationIcon>
-    
-    <!-- Application Manifest for Admin Rights -->
-    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Version>1.1.0</Version>
+    <Authors>Rob Handyside - Event Tech Research Ltd</Authors>
+    <Product>MYLan DHCP Field Server</Product>
+    <Description>A lightweight portable DHCP server for production networks</Description>
   </PropertyGroup>
 
   <ItemGroup>
