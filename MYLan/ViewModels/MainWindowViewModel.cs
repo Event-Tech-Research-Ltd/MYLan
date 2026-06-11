@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.Net;
+using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -10,27 +12,30 @@ namespace DhcpFieldServer.ViewModels;
 public partial class MainWindowViewModel : ObservableObject
 {
     private DhcpServer? _server;
+    private AdapterIpConfiguration? _originalAdapterConfig;
 
     /// <summary>
-    /// Lease file stored next to the executable, with fallback to user home
-    /// if that directory is read-only (e.g. macOS .app bundle, Program Files).
+    /// Lease file stored in per-user application data so installers can live in read-only locations.
     /// </summary>
     private static readonly string LeaseFilePath = GetWritableLeaseFilePath();
 
     private static string GetWritableLeaseFilePath()
     {
-        string primary = Path.Combine(AppContext.BaseDirectory, "mylan-leases.json");
         try
         {
-            // Test writability
-            string testFile = primary + ".writetest";
-            File.WriteAllText(testFile, "");
-            File.Delete(testFile);
-            return primary;
+            string basePath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            if (string.IsNullOrWhiteSpace(basePath))
+                basePath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+
+            if (string.IsNullOrWhiteSpace(basePath))
+                basePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".mylan");
+
+            string directory = Path.Combine(basePath, "MYLan");
+            Directory.CreateDirectory(directory);
+            return Path.Combine(directory, "mylan-leases.json");
         }
         catch
         {
-            // Fall back to user home directory
             string fallback = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
                 ".mylan", "mylan-leases.json");
@@ -141,30 +146,52 @@ public partial class MainWindowViewModel : ObservableObject
 
         foreach (var (label, value) in fields)
         {
-            if (!System.Net.IPAddress.TryParse(value, out _))
+            if (!TryParseIpv4(value, out _))
             {
-                AppendLog($"[ERROR] Invalid {label}: \"{value}\" — enter a valid IPv4 address.");
+                AppendLog($"[ERROR] Invalid {label}: \"{value}\" - enter a valid IPv4 address.");
                 return;
             }
         }
 
-        // Validate pool range
-        var poolStartIp = System.Net.IPAddress.Parse(PoolStart);
-        var poolEndIp = System.Net.IPAddress.Parse(PoolEnd);
+        try
+        {
+            _ = NetworkHelper.NetmaskToCidr(SubnetMask);
+        }
+        catch
+        {
+            AppendLog("[ERROR] Subnet Mask must be a contiguous IPv4 mask, for example 255.255.255.0.");
+            return;
+        }
+
+        var serverIp = IPAddress.Parse(ServerIp);
+        var subnetMask = IPAddress.Parse(SubnetMask);
+        var poolStartIp = IPAddress.Parse(PoolStart);
+        var poolEndIp = IPAddress.Parse(PoolEnd);
         if (CompareIpBytes(poolStartIp, poolEndIp) > 0)
         {
             AppendLog("[ERROR] Pool Start must be less than or equal to Pool End.");
             return;
         }
 
+        if (!IsInSameSubnet(poolStartIp, serverIp, subnetMask) ||
+            !IsInSameSubnet(poolEndIp, serverIp, subnetMask))
+        {
+            AppendLog("[ERROR] Pool range must be in the same subnet as the Server IP.");
+            return;
+        }
+
         AppendLog($"Using adapter: {SelectedAdapter.DisplayName}");
+        _originalAdapterConfig = NetworkHelper.CaptureAdapterConfiguration(SelectedAdapter.Name);
+        if (_originalAdapterConfig == null)
+            AppendLog("[WARN] Could not capture previous adapter IP configuration; automatic restore may be unavailable.");
 
         // Configure static IP on the selected adapter
         AppendLog($"Setting static IP {ServerIp}/{SubnetMask} on adapter...");
-        bool ipOk = NetworkHelper.SetStaticIp(SelectedAdapter.Name, ServerIp, SubnetMask);
+        bool ipOk = NetworkHelper.SetStaticIp(SelectedAdapter.Name, ServerIp, SubnetMask, Gateway);
 
         if (!ipOk)
         {
+            RestoreOriginalAdapterConfiguration();
             string hint = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
                 ? "Are you running as Administrator?"
                 : "Are you running as root (sudo)?";
@@ -208,6 +235,9 @@ public partial class MainWindowViewModel : ObservableObject
         catch (Exception ex)
         {
             AppendLog($"[ERROR] {ex.Message}");
+            try { _server?.Stop(); } catch { }
+            _server = null;
+            RestoreOriginalAdapterConfiguration();
         }
     }
 
@@ -221,6 +251,10 @@ public partial class MainWindowViewModel : ObservableObject
         catch (Exception ex)
         {
             AppendLog($"[ERROR] {ex.Message}");
+        }
+        finally
+        {
+            RestoreOriginalAdapterConfiguration();
         }
 
         IsRunning = false;
@@ -265,10 +299,54 @@ public partial class MainWindowViewModel : ObservableObject
         }
     }
 
-    private static int CompareIpBytes(System.Net.IPAddress a, System.Net.IPAddress b)
+    private void RestoreOriginalAdapterConfiguration()
+    {
+        if (_originalAdapterConfig == null) return;
+
+        AppendLog("Restoring previous adapter IP configuration...");
+        if (NetworkHelper.RestoreAdapterConfiguration(_originalAdapterConfig))
+            AppendLog("Previous adapter IP configuration restored.");
+        else
+            AppendLog("[WARN] Could not restore previous adapter IP configuration automatically.");
+
+        _originalAdapterConfig = null;
+    }
+
+    private static bool TryParseIpv4(string value, out IPAddress address)
+    {
+        if (IPAddress.TryParse(value, out var parsed) &&
+            parsed.AddressFamily == AddressFamily.InterNetwork)
+        {
+            address = parsed;
+            return true;
+        }
+
+        address = IPAddress.None;
+        return false;
+    }
+
+    private static bool IsInSameSubnet(IPAddress address, IPAddress serverIp, IPAddress subnetMask)
+    {
+        uint mask = IpToUint(subnetMask);
+        return (IpToUint(address) & mask) == (IpToUint(serverIp) & mask);
+    }
+
+    private static uint IpToUint(IPAddress ip)
+    {
+        byte[] b = ip.GetAddressBytes();
+        if (b.Length != 4)
+            throw new ArgumentException("Only IPv4 addresses are supported.", nameof(ip));
+
+        return (uint)(b[0] << 24 | b[1] << 16 | b[2] << 8 | b[3]);
+    }
+
+    private static int CompareIpBytes(IPAddress a, IPAddress b)
     {
         byte[] ab = a.GetAddressBytes();
         byte[] bb = b.GetAddressBytes();
+        if (ab.Length != 4 || bb.Length != 4)
+            throw new ArgumentException("Only IPv4 addresses are supported.");
+
         for (int i = 0; i < ab.Length; i++)
         {
             int d = ab[i].CompareTo(bb[i]);

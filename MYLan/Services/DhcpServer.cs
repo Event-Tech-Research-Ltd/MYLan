@@ -43,6 +43,7 @@ public enum LeaseState
         private readonly IPAddress _subnetMask;
         private readonly IPAddress _routerIp;
         private readonly IPAddress _dnsIp;
+        private readonly IPAddress _broadcastIp;
         private readonly int _leaseSeconds;
 
         private readonly Dictionary<string, DhcpLease> _leases = new();
@@ -83,14 +84,21 @@ public enum LeaseState
                           string subnetMask, string routerIp, string dnsIp,
                           int leaseHours = 8, string? leaseFilePath = null)
         {
-            _serverIp    = IPAddress.Parse(serverIpAddress);
-            _poolStart   = IPAddress.Parse(poolStart);
-            _poolEnd     = IPAddress.Parse(poolEnd);
-            _subnetMask  = IPAddress.Parse(subnetMask);
-            _routerIp    = IPAddress.Parse(routerIp);
-            _dnsIp       = IPAddress.Parse(dnsIp);
+            _serverIp    = ParseIpv4(serverIpAddress, nameof(serverIpAddress));
+            _poolStart   = ParseIpv4(poolStart, nameof(poolStart));
+            _poolEnd     = ParseIpv4(poolEnd, nameof(poolEnd));
+            _subnetMask  = ParseIpv4(subnetMask, nameof(subnetMask));
+            _routerIp    = ParseIpv4(routerIp, nameof(routerIp));
+            _dnsIp       = ParseIpv4(dnsIp, nameof(dnsIp));
+            _broadcastIp = GetBroadcastAddress(_serverIp, _subnetMask);
             _leaseSeconds = leaseHours * 3600;
             _leaseFilePath = leaseFilePath;
+
+            if (CompareIp(_poolStart, _poolEnd) > 0)
+                throw new ArgumentException("Pool start must be less than or equal to pool end.");
+
+            if (!IsInServerSubnet(_poolStart) || !IsInServerSubnet(_poolEnd))
+                throw new ArgumentException("Pool range must be in the same subnet as the server IP.");
 
             LoadLeases();
         }
@@ -125,7 +133,7 @@ public enum LeaseState
             _listenerThread = new Thread(ListenLoop) { IsBackground = true };
             _listenerThread.Start();
 
-            Log?.Invoke("DHCP server started on UDP port 67.");
+            Log?.Invoke($"DHCP server started on UDP port 67. Replies broadcast to {_broadcastIp}.");
         }
 
         public void Stop()
@@ -231,6 +239,13 @@ public enum LeaseState
             {
                 PurgeExpired();
 
+                bool requestNamesThisServer = options.ServerIdentifier?.Equals(_serverIp) == true;
+                if (options.ServerIdentifier != null && !requestNamesThisServer)
+                {
+                    Log?.Invoke($"Ignoring REQUEST for DHCP server {options.ServerIdentifier}.");
+                    return;
+                }
+
                 IPAddress? requestedIp = options.RequestedIp;
                 if (requestedIp == null || requestedIp.Equals(IPAddress.Any))
                 {
@@ -245,8 +260,16 @@ public enum LeaseState
                 {
                     if (!IsInPool(requestedIp))
                     {
-                        Log?.Invoke($"[NAK] {mac} requested {requestedIp} — outside pool.");
-                        SendNak(xid, macBytes); return;
+                        if (requestNamesThisServer)
+                        {
+                            Log?.Invoke($"[NAK] {mac} requested {requestedIp} - outside pool.");
+                            SendNak(xid, macBytes);
+                        }
+                        else
+                        {
+                            Log?.Invoke($"Ignoring REQUEST for {requestedIp} - outside MYLan pool.");
+                        }
+                        return;
                     }
 
                     if (IsDeclined(requestedIp))
@@ -406,6 +429,9 @@ public enum LeaseState
         private bool IsInPool(IPAddress ip)
             => CompareIp(ip, _poolStart) >= 0 && CompareIp(ip, _poolEnd) <= 0;
 
+        private bool IsInServerSubnet(IPAddress ip)
+            => (IpToUint(ip) & IpToUint(_subnetMask)) == (IpToUint(_serverIp) & IpToUint(_subnetMask));
+
         private bool IsDeclined(IPAddress ip)
             => _declinedIps.TryGetValue(ip.ToString(), out var until) && until > DateTime.UtcNow;
 
@@ -425,6 +451,8 @@ public enum LeaseState
         private static uint IpToUint(IPAddress ip)
         {
             byte[] b = ip.GetAddressBytes();
+            if (b.Length != 4)
+                throw new ArgumentException("Only IPv4 addresses are supported.", nameof(ip));
             return (uint)(b[0] << 24 | b[1] << 16 | b[2] << 8 | b[3]);
         }
 
@@ -435,6 +463,21 @@ public enum LeaseState
                 (byte)(val >> 24), (byte)(val >> 16),
                 (byte)(val >> 8),  (byte)val
             });
+        }
+
+        private static IPAddress ParseIpv4(string value, string parameterName)
+        {
+            if (!IPAddress.TryParse(value, out var ip) || ip.AddressFamily != AddressFamily.InterNetwork)
+                throw new ArgumentException($"{parameterName} must be a valid IPv4 address.", parameterName);
+
+            return ip;
+        }
+
+        private static IPAddress GetBroadcastAddress(IPAddress address, IPAddress subnetMask)
+        {
+            uint ip = IpToUint(address);
+            uint mask = IpToUint(subnetMask);
+            return UintToIp((ip & mask) | ~mask);
         }
 
         // ── Option Parsing ───────────────────────────────────
@@ -477,7 +520,7 @@ public enum LeaseState
         private void SendReply(uint xid, byte[] clientMac, IPAddress yiaddr, byte dhcpMessageType)
         {
             byte[] packet = BuildReplyPacket(xid, clientMac, yiaddr, dhcpMessageType);
-            try { _udp?.Send(packet, packet.Length, new IPEndPoint(IPAddress.Broadcast, 68)); }
+            try { SendToClientPort(packet); }
             catch (ObjectDisposedException) { }
         }
 
@@ -501,7 +544,7 @@ public enum LeaseState
 
             byte[] final = new byte[idx];
             Array.Copy(packet, final, idx);
-            try { _udp?.Send(final, final.Length, new IPEndPoint(IPAddress.Broadcast, 68)); }
+            try { SendToClientPort(final); }
             catch (ObjectDisposedException) { }
             Log?.Invoke("Sent NAK.");
         }
@@ -530,6 +573,8 @@ public enum LeaseState
             Array.Copy(_routerIp.GetAddressBytes(), 0, packet, idx, 4); idx += 4;
             packet[idx++] = 6; packet[idx++] = 4;
             Array.Copy(_dnsIp.GetAddressBytes(), 0, packet, idx, 4); idx += 4;
+            packet[idx++] = 28; packet[idx++] = 4;
+            Array.Copy(_broadcastIp.GetAddressBytes(), 0, packet, idx, 4); idx += 4;
             packet[idx++] = 51; packet[idx++] = 4;
             packet[idx++] = (byte)((_leaseSeconds >> 24) & 0xFF);
             packet[idx++] = (byte)((_leaseSeconds >> 16) & 0xFF);
@@ -540,6 +585,11 @@ public enum LeaseState
             byte[] final = new byte[idx];
             Array.Copy(packet, final, idx);
             return final;
+        }
+
+        private void SendToClientPort(byte[] packet)
+        {
+            _udp?.Send(packet, packet.Length, new IPEndPoint(_broadcastIp, 68));
         }
 
         // ── Lease Persistence ────────────────────────────────

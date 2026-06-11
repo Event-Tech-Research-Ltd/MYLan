@@ -1,6 +1,13 @@
-# MYLan cross-platform build notes
+# MYLan Cross-Platform Build Notes
 
-This version is set up as a .NET 8 Avalonia desktop app.
+MYLan is a .NET 8 Avalonia desktop app.
+
+## Restore and Build
+
+```powershell
+dotnet restore .\MYLan\MYLan.csproj
+dotnet build .\MYLan\MYLan.csproj -c Release
+```
 
 ## Windows x64
 
@@ -14,7 +21,7 @@ Output:
 release\win-x64\MYLan.exe
 ```
 
-Run as Administrator because MYLan binds to DHCP UDP/67 and changes adapter IP settings.
+Run as Administrator.
 
 ## macOS Intel
 
@@ -32,12 +39,26 @@ chmod +x ./release/osx-arm64/MYLan
 sudo ./release/osx-arm64/MYLan
 ```
 
-## Important macOS notes
+## Installers
 
-For proper public Mac distribution, build a `.app` bundle, code-sign it, notarise it with Apple, and distribute it in a `.dmg` or `.pkg`.
+Windows installer:
 
-For field/internal testing, the raw `MYLan` executable can be tested from Terminal, but macOS security may require manual approval.
+```powershell
+.\build-installer-windows.ps1
+```
 
-## Why sudo/admin is required
+macOS app bundles and DMGs:
 
-DHCP server mode requires binding to UDP port 67, which is privileged on Unix-like systems, and the app modifies network adapter configuration. Windows requires Administrator; macOS/Linux require root/sudo.
+```bash
+./publish-macos.sh
+./installer/macos/create-macos-app.sh
+./installer/macos/create-dmg-macos.sh
+```
+
+## Privileges
+
+DHCP server mode requires binding to UDP port 67 and changing adapter IPv4 settings. Windows requires Administrator; macOS/Linux require root.
+
+## Release Signing
+
+For public release, sign the Windows installer and code-sign/notarise/staple the macOS app or DMG.
