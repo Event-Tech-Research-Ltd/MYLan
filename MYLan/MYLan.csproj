@@ -7,10 +7,13 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <ApplicationIcon>Assets\DHCP.ico</ApplicationIcon>
+    <ApplicationIcon>Assets/DHCP.ico</ApplicationIcon>
     <RootNamespace>DhcpFieldServer</RootNamespace>
     <AssemblyName>MYLan</AssemblyName>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
 
     <Version>2.1.0</Version>
     <Authors>Rob Handyside - Event Tech Research Ltd</Authors>
@@ -30,7 +33,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <AvaloniaResource Include="Assets\**" />
+    <AvaloniaResource Include="Assets/**" />
   </ItemGroup>
 
 </Project>
