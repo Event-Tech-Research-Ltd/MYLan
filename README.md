@@ -49,6 +49,18 @@ dotnet build .\MYLan\MYLan.csproj -c Release
 
 For a simple end-user install workflow, see `EASY-INSTALL.md`.
 
+To create a Mac-ready zip from Windows:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\build-macos-zip-windows.ps1
+```
+
+Output:
+
+```text
+installer-output\macos\MYLan-2.1.0-macos-universal-ready.zip
+```
+
 Publish Windows x64:
 
 ```powershell

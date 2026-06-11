@@ -28,7 +28,22 @@ The installer:
 
 ## Mac Users
 
-Give users the DMG for their Mac:
+You now have two Mac release options.
+
+If building from Windows, give users this zip:
+
+```text
+installer-output/macos/MYLan-2.1.0-macos-universal-ready.zip
+```
+
+It contains both Apple Silicon and Intel builds. Users install it by:
+
+1. Unzipping it on their Mac.
+2. Opening the `macos-ready` folder.
+3. Double-clicking `Install MYLan.command`.
+4. Entering their Mac administrator password.
+
+If building on a Mac, you can create DMG files:
 
 ```text
 installer-output/macos/MYLan-2.1.0-osx-arm64.dmg
@@ -37,11 +52,7 @@ installer-output/macos/MYLan-2.1.0-osx-x64.dmg
 
 Most newer Macs use `osx-arm64`. Older Intel Macs use `osx-x64`.
 
-Users install it by:
-
-1. Opening the DMG.
-2. Double-clicking `Install MYLan.command`.
-3. Entering their Mac administrator password.
+DMG users install it by opening the DMG and double-clicking `Install MYLan.command`.
 
 After installation, users run MYLan by double-clicking:
 
@@ -51,7 +62,16 @@ After installation, users run MYLan by double-clicking:
 
 The command launcher is needed because MYLan is a DHCP server and macOS requires administrator privileges for UDP port 67 and adapter changes.
 
-To build the DMGs on macOS:
+To build the universal Mac zip on Windows:
+
+1. Install the .NET 8 SDK.
+2. Run:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\build-macos-zip-windows.ps1
+```
+
+To build DMGs on macOS:
 
 1. Install the .NET 8 SDK.
 2. Double-click `CREATE-MACOS-DMGS.command`.

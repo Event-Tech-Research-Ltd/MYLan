@@ -40,6 +40,26 @@ Windows Settings > Apps > Installed apps > MYLan > Uninstall
 
 ## macOS App Bundle and DMG
 
+### Build Mac-ready zip from Windows
+
+Windows can publish macOS binaries, but it cannot create real `.dmg` files because DMG creation requires Apple's `hdiutil` on macOS.
+
+From Windows, run:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\build-macos-zip-windows.ps1
+```
+
+Output:
+
+```text
+installer-output/macos/MYLan-2.1.0-macos-universal-ready.zip
+```
+
+This zip contains both `MYLan-arm64.app` and `MYLan-x64.app`, plus `Install MYLan.command`, `Run MYLan.command`, `Uninstall MYLan.command`, and `README-FIRST.txt`.
+
+### Build DMG files on macOS
+
 Build app executables on macOS:
 
 ```bash

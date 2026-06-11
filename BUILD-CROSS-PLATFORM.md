@@ -55,6 +55,12 @@ macOS app bundles and DMGs:
 ./installer/macos/create-dmg-macos.sh
 ```
 
+Mac-ready zip from Windows:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\build-macos-zip-windows.ps1
+```
+
 ## Privileges
 
 DHCP server mode requires binding to UDP port 67 and changing adapter IPv4 settings. Windows requires Administrator; macOS/Linux require root.
