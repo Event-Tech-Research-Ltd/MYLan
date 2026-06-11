@@ -37,4 +37,9 @@
     <AvaloniaResource Include="Assets/**" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Remove="App.xaml.cs;MainWindow.xaml.cs;AssemblyInfo.cs;DhcpServer.cs;NetworkHelper.cs" />
+    <None Remove="App.xaml;MainWindow.xaml" />
+  </ItemGroup>
+
 </Project>

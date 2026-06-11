@@ -51,11 +51,8 @@ Name: "{autoprograms}\MYLan"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{a
 Name: "{autodesktop}\MYLan"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=\"MYLan DHCP Server\" dir=in action=allow program=\"{app}\{#MyAppExeName}\" protocol=UDP localport=67 enable=yes"; Flags: runhidden; Tasks: firewall
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""MYLan DHCP Server"" dir=in action=allow program=""{app}\{#MyAppExeName}"" protocol=UDP localport=67 enable=yes"; Flags: runhidden; Tasks: firewall
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch MYLan"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
-Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=\"MYLan DHCP Server\""; Flags: runhidden
-
-[UninstallDelete]
-Type: filesandordirs; Name: "{localappdata}\MYLan"
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""MYLan DHCP Server"""; Flags: runhidden; RunOnceId: "DeleteMYLanFirewallRule"
