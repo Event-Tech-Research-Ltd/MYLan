@@ -11,6 +11,7 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 rm -rf /Applications/MYLan.app
+rm -f /Applications/Run\ MYLan.command
 rm -f /usr/local/bin/mylan
 rm -rf /Library/Application\ Support/MYLan
 rm -rf /var/root/.local/share/MYLan 2>/dev/null || true

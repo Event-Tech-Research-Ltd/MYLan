@@ -47,6 +47,8 @@ dotnet restore .\MYLan\MYLan.csproj
 dotnet build .\MYLan\MYLan.csproj -c Release
 ```
 
+For a simple end-user install workflow, see `EASY-INSTALL.md`.
+
 Publish Windows x64:
 
 ```powershell

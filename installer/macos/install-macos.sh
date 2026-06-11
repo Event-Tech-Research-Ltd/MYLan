@@ -8,6 +8,7 @@ set -euo pipefail
 APP_SOURCE="${1:-}"
 APP_DEST="/Applications/MYLan.app"
 CLI_DEST="/usr/local/bin/mylan"
+LAUNCHER_DEST="/Applications/Run MYLan.command"
 
 if [[ -z "$APP_SOURCE" || ! -d "$APP_SOURCE" ]]; then
   echo "Usage: sudo ./install-macos.sh /path/to/MYLan.app"
@@ -32,6 +33,13 @@ sudo /Applications/MYLan.app/Contents/MacOS/MYLan "$@"
 RUNNER
 chmod +x "$CLI_DEST"
 
+cat > "$LAUNCHER_DEST" <<'LAUNCHER'
+#!/usr/bin/env bash
+sudo /Applications/MYLan.app/Contents/MacOS/MYLan "$@"
+LAUNCHER
+chmod +x "$LAUNCHER_DEST"
+chown root:wheel "$LAUNCHER_DEST"
+
 echo "MYLan installed to $APP_DEST"
-echo "Run from Terminal with: mylan"
-echo "Or run directly with: sudo /Applications/MYLan.app/Contents/MacOS/MYLan"
+echo "Run by double-clicking: $LAUNCHER_DEST"
+echo "Or run from Terminal with: mylan"

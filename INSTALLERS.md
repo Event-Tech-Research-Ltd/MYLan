@@ -12,6 +12,12 @@ Build from the repository root:
 .\build-installer-windows.ps1
 ```
 
+For the easiest local build, double-click:
+
+```text
+CREATE-WINDOWS-INSTALLER.bat
+```
+
 This will:
 
 1. Publish the standalone Windows x64 app.
@@ -38,6 +44,12 @@ Build app executables on macOS:
 
 ```bash
 ./publish-macos.sh
+```
+
+For the easiest local build, double-click:
+
+```text
+CREATE-MACOS-DMGS.command
 ```
 
 Create `.app` bundles:
@@ -95,6 +107,8 @@ Outputs:
 installer-output/macos/MYLan-2.1.0-osx-x64.dmg
 installer-output/macos/MYLan-2.1.0-osx-arm64.dmg
 ```
+
+Each DMG contains `Install MYLan.command`, `Run MYLan.command`, `Uninstall MYLan.command`, the app bundle, an Applications shortcut, and `README-FIRST.txt`.
 
 ## Public Release
 
