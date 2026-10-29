@@ -6,7 +6,7 @@ set -euo pipefail
 #   ./publish-macos.sh
 #   ./installer/macos/create-macos-app.sh
 
-VERSION="2.1.0"
+VERSION="2.2.0"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 write_install_script() {
@@ -32,9 +32,13 @@ echo "macOS will ask for your administrator password."
 
 sudo rm -rf "$APP_DEST"
 sudo cp -R "$APP_SOURCE" "$APP_DEST"
+# cp keeps the download quarantine flag; Gatekeeper then blocks the unsigned binary.
+sudo xattr -dr com.apple.quarantine "$APP_DEST" 2>/dev/null || true
 sudo chown -R root:wheel "$APP_DEST"
 sudo chmod -R go+rX "$APP_DEST"
 sudo chmod +x "$APP_DEST/Contents/MacOS/MYLan"
+# Ad-hoc sign the bundle on this Mac so Gatekeeper/launch checks accept it.
+sudo codesign --force --deep --sign - "$APP_DEST" >/dev/null 2>&1 || echo "Note: ad-hoc signing failed; MYLan may still run."
 
 sudo mkdir -p /usr/local/bin
 TMP_RUNNER="$(mktemp)"
@@ -95,6 +99,7 @@ sudo rm -f "/Applications/Run MYLan.command"
 sudo rm -f /usr/local/bin/mylan
 sudo rm -rf "/Library/Application Support/MYLan" 2>/dev/null || true
 sudo rm -rf /var/root/.local/share/MYLan 2>/dev/null || true
+sudo rm -rf "/var/root/Library/Application Support/MYLan" 2>/dev/null || true
 
 echo
 echo "MYLan removed."
@@ -148,6 +153,16 @@ create_dmg() {
 
   rm -f "$dmg"
   hdiutil create -volname "MYLan ${VERSION}" -srcfolder "$staging" -ov -format UDZO "$dmg"
+
+  # Optional public-release path: SIGN_IDENTITY="Developer ID Application: ..." and
+  # NOTARY_PROFILE=<xcrun notarytool store-credentials profile name>.
+  if [[ -n "${SIGN_IDENTITY:-}" ]]; then
+    codesign --force --timestamp --sign "$SIGN_IDENTITY" "$dmg"
+    if [[ -n "${NOTARY_PROFILE:-}" ]]; then
+      xcrun notarytool submit "$dmg" --keychain-profile "$NOTARY_PROFILE" --wait
+      xcrun stapler staple "$dmg"
+    fi
+  fi
   echo "Created: $dmg"
 }
 

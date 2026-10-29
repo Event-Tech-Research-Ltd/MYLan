@@ -128,11 +128,13 @@
                     </Grid>
                     <TextBlock Grid.Row="4" Grid.Column="4" Classes="label" Text="DNS:" />
                     <TextBox Grid.Row="4" Grid.Column="6" Classes="config"
-                             Text="{Binding DnsServer}" IsEnabled="{Binding !IsRunning}" />
+                             Text="{Binding DnsServer}" IsEnabled="{Binding !IsRunning}"
+                             Watermark="none (optional)" />
 
                     <TextBlock Grid.Row="6" Grid.Column="0" Classes="label" Text="Gateway:" />
                     <TextBox Grid.Row="6" Grid.Column="2" Classes="config"
-                             Text="{Binding Gateway}" IsEnabled="{Binding !IsRunning}" />
+                             Text="{Binding Gateway}" IsEnabled="{Binding !IsRunning}"
+                             Watermark="none (optional)" />
                 </Grid>
             </Border>
 

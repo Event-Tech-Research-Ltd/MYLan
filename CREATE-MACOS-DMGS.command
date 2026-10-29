@@ -15,7 +15,7 @@ chmod +x publish-macos.sh installer/macos/*.sh
 echo
 echo "Done."
 echo "DMGs:"
-echo "installer-output/macos/MYLan-2.1.0-osx-x64.dmg"
-echo "installer-output/macos/MYLan-2.1.0-osx-arm64.dmg"
+echo "installer-output/macos/MYLan-2.2.0-osx-x64.dmg"
+echo "installer-output/macos/MYLan-2.2.0-osx-arm64.dmg"
 echo
 read -r -p "Press Return to close."

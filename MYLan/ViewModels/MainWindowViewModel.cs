@@ -67,18 +67,6 @@ public partial class MainWindowViewModel : ObservableObject
     [ObservableProperty]
     private string _serverIp = "192.168.1.1";
 
-    partial void OnServerIpChanged(string value)
-    {
-        // Gateway defaults to match server IP unless the user has overridden it
-        if (Gateway == _lastAutoGateway || string.IsNullOrEmpty(Gateway))
-        {
-            Gateway = value;
-            _lastAutoGateway = value;
-        }
-    }
-
-    private string _lastAutoGateway = "192.168.1.1";
-
     [ObservableProperty]
     private string _subnetMask = "255.255.255.0";
 
@@ -89,10 +77,12 @@ public partial class MainWindowViewModel : ObservableObject
     private string _poolEnd = "192.168.1.150";
 
     [ObservableProperty]
-    private string _gateway = "192.168.1.1";
+    // Blank = not handed out. MYLan does not route, so advertising this machine as the
+    // gateway (the old default) black-holed internet traffic on dual-homed clients.
+    private string _gateway = "";
 
     [ObservableProperty]
-    private string _dnsServer = "8.8.8.8";
+    private string _dnsServer = "";
 
     [ObservableProperty]
     private bool _isElevated;
@@ -137,15 +127,16 @@ public partial class MainWindowViewModel : ObservableObject
         if (SelectedAdapter == null) return;
 
         // ── Validate all IP fields before doing anything ──
-        var fields = new (string Label, string Value)[]
+        var fields = new (string Label, string Value, bool Optional)[]
         {
-            ("Server IP", ServerIp), ("Subnet Mask", SubnetMask),
-            ("Pool Start", PoolStart), ("Pool End", PoolEnd),
-            ("Gateway", Gateway), ("DNS", DnsServer)
+            ("Server IP", ServerIp, false), ("Subnet Mask", SubnetMask, false),
+            ("Pool Start", PoolStart, false), ("Pool End", PoolEnd, false),
+            ("Gateway", Gateway, true), ("DNS", DnsServer, true)
         };
 
-        foreach (var (label, value) in fields)
+        foreach (var (label, value, optional) in fields)
         {
+            if (optional && string.IsNullOrWhiteSpace(value)) continue;
             if (!TryParseIpv4(value, out _))
             {
                 AppendLog($"[ERROR] Invalid {label}: \"{value}\" - enter a valid IPv4 address.");
@@ -181,13 +172,35 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         AppendLog($"Using adapter: {SelectedAdapter.DisplayName}");
+
+        string? clash = NetworkHelper.FindSubnetConflict(SelectedAdapter.Name, ServerIp, SubnetMask);
+        if (clash != null)
+        {
+            AppendLog($"[ERROR] {clash} is already on the {ServerIp}/{SubnetMask} network. " +
+                      "Disconnect it (e.g. venue Wi-Fi) or pick a different Server IP/subnet, then try again.");
+            return;
+        }
+
         _originalAdapterConfig = NetworkHelper.CaptureAdapterConfiguration(SelectedAdapter.Name);
         if (_originalAdapterConfig == null)
             AppendLog("[WARN] Could not capture previous adapter IP configuration; automatic restore may be unavailable.");
+        else if (!_originalAdapterConfig.IsDhcpEnabled && _originalAdapterConfig.IpAddress == ServerIp)
+        {
+            // Left over from a previous run that crashed; restoring it would keep the adapter stuck.
+            AppendLog("Adapter still has MYLan's address from a previous run; it will be returned to DHCP on Stop.");
+            _originalAdapterConfig = new AdapterIpConfiguration
+            {
+                AdapterName = _originalAdapterConfig.AdapterName,
+                MacHardwarePort = _originalAdapterConfig.MacHardwarePort,
+                IsDhcpEnabled = true
+            };
+        }
 
         // Configure static IP on the selected adapter
         AppendLog($"Setting static IP {ServerIp}/{SubnetMask} on adapter...");
-        bool ipOk = NetworkHelper.SetStaticIp(SelectedAdapter.Name, ServerIp, SubnetMask, Gateway);
+        // Never put a router on this machine's own adapter: on macOS that can make the show
+        // network the default route and cut the Mac's internet while MYLan runs.
+        bool ipOk = NetworkHelper.SetStaticIp(SelectedAdapter.Name, ServerIp, SubnetMask);
 
         if (!ipOk)
         {
@@ -196,6 +209,13 @@ public partial class MainWindowViewModel : ObservableObject
                 ? "Are you running as Administrator?"
                 : "Are you running as root (sudo)?";
             AppendLog($"[ERROR] Failed to set static IP. {hint}");
+            return;
+        }
+
+        if (!NetworkHelper.WaitForIp(SelectedAdapter.Name, ServerIp, TimeSpan.FromSeconds(10)))
+        {
+            AppendLog($"[ERROR] {ServerIp} did not come up on the adapter (cable unplugged or address conflict?).");
+            RestoreOriginalAdapterConfiguration();
             return;
         }
 
@@ -208,9 +228,10 @@ public partial class MainWindowViewModel : ObservableObject
                 poolStart: PoolStart,
                 poolEnd: PoolEnd,
                 subnetMask: SubnetMask,
-                routerIp: Gateway,
-                dnsIp: DnsServer,
-                leaseFilePath: LeaseFilePath);
+                routerIp: string.IsNullOrWhiteSpace(Gateway) ? null : Gateway,
+                dnsIp: string.IsNullOrWhiteSpace(DnsServer) ? null : DnsServer,
+                leaseFilePath: LeaseFilePath,
+                interfaceName: SelectedAdapter.Name);
 
             _server.Log += msg =>
             {
@@ -261,6 +282,12 @@ public partial class MainWindowViewModel : ObservableObject
         StatusText = "Stopped";
         StatusColour = "#F44336";
         _server = null;
+    }
+
+    /// <summary>Called when the window closes so the adapter is restored and leases flushed.</summary>
+    public void Shutdown()
+    {
+        if (IsRunning || _server != null) Stop();
     }
 
     [RelayCommand]

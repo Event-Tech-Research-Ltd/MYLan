@@ -86,15 +86,36 @@ public static class NetworkHelper
         return false;
     }
 
+    /// <summary>
+    /// Polls until the OS has actually assigned the address (netsh/networksetup return
+    /// before the address is usable). Binding port 67 before that fails on Windows.
+    /// </summary>
+    public static bool WaitForIp(string adapterName, string ip, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        do
+        {
+            var nic = FindInterface(adapterName);
+            if (nic != null && nic.GetIPProperties().UnicastAddresses.Any(a => a.Address.ToString() == ip))
+                return true;
+            Thread.Sleep(250);
+        } while (DateTime.UtcNow < deadline);
+        return false;
+    }
+
     public static List<NetworkAdapterInfo> GetAvailableAdapters()
     {
         var adapters = new List<NetworkAdapterInfo>();
+
+        string macPorts = RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
+            ? RunCommand("networksetup", "-listallhardwareports") : "";
 
         var nics = NetworkInterface.GetAllNetworkInterfaces()
             .Where(n =>
                 n.NetworkInterfaceType != NetworkInterfaceType.Loopback &&
                 n.NetworkInterfaceType != NetworkInterfaceType.Tunnel &&
-                n.OperationalStatus == OperationalStatus.Up);
+                n.OperationalStatus == OperationalStatus.Up &&
+                !IsWirelessOrVirtual(n, macPorts));
 
         foreach (var nic in nics)
         {
@@ -118,6 +139,58 @@ public static class NetworkHelper
         }
 
         return adapters;
+    }
+
+    /// <summary>
+    /// Wi-Fi is excluded: making the Wi-Fi client adapter static kills the machine's
+    /// internet and would run DHCP on the venue's Wi-Fi. .NET reports Wi-Fi as
+    /// "Ethernet" on macOS and Linux, so each OS is checked its own way.
+    /// </summary>
+    private static bool IsWirelessOrVirtual(NetworkInterface nic, string macHardwarePorts)
+    {
+        if (nic.NetworkInterfaceType == NetworkInterfaceType.Wireless80211)
+            return true;
+
+        if (OperatingSystem.IsLinux())
+            return Directory.Exists($"/sys/class/net/{nic.Name}/wireless");
+
+        if (OperatingSystem.IsMacOS())
+        {
+            // AirDrop/low-latency WLAN, VPN tunnels, hotspot and bridge interfaces.
+            string[] virtualPrefixes = { "awdl", "llw", "utun", "anpi", "ap", "bridge", "gif", "stf", "ipsec" };
+            if (virtualPrefixes.Any(p => nic.Name.StartsWith(p, StringComparison.Ordinal)))
+                return true;
+            string? port = HardwarePortFor(macHardwarePorts, nic.Name);
+            return port != null && (port.Equals("Wi-Fi", StringComparison.OrdinalIgnoreCase) ||
+                                    port.Equals("AirPort", StringComparison.OrdinalIgnoreCase));
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Name of another up adapter that already has an address in serverIp's subnet,
+    /// e.g. venue Wi-Fi on 192.168.1.0/24, or null. Two adapters on one subnet breaks both.
+    /// </summary>
+    public static string? FindSubnetConflict(string adapterName, string serverIp, string netmask)
+    {
+        uint mask = ToUint(IPAddress.Parse(netmask));
+        uint net = ToUint(IPAddress.Parse(serverIp)) & mask;
+        foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
+        {
+            if (nic.Name == adapterName || nic.OperationalStatus != OperationalStatus.Up ||
+                nic.NetworkInterfaceType == NetworkInterfaceType.Loopback) continue;
+            foreach (var a in nic.GetIPProperties().UnicastAddresses)
+                if (a.Address.AddressFamily == AddressFamily.InterNetwork && (ToUint(a.Address) & mask) == net)
+                    return $"{nic.Name} ({a.Address})";
+        }
+        return null;
+    }
+
+    private static uint ToUint(IPAddress ip)
+    {
+        byte[] b = ip.GetAddressBytes();
+        return (uint)(b[0] << 24 | b[1] << 16 | b[2] << 8 | b[3]);
     }
 
     public static bool HasElevatedPrivileges()
@@ -253,13 +326,23 @@ public static class NetworkHelper
     {
         string port = config.MacHardwarePort ?? ResolveMacHardwarePort(config.AdapterName) ?? config.AdapterName;
         if (config.IsDhcpEnabled)
-            return RunCommandSuccess("networksetup", "-setdhcp", port);
+        {
+            // Undo the temporary `ipconfig set MANUAL` first; -setdhcp alone is a no-op when the
+            // saved service config is already DHCP, which would leave the address in place.
+            bool ipcfg = RunCommandSuccess("ipconfig", "set", config.AdapterName, "DHCP");
+            bool svc = RunCommandSuccess("networksetup", "-setdhcp", port);
+            return ipcfg || svc;
+        }
 
         if (string.IsNullOrWhiteSpace(config.IpAddress) || string.IsNullOrWhiteSpace(config.SubnetMask))
             return false;
 
+        // Put the original address back directly (saved service config may be unchanged, so
+        // networksetup alone would not re-apply it), then re-save the service settings.
+        bool direct = RunCommandSuccess("ipconfig", "set", config.AdapterName, "MANUAL", config.IpAddress, config.SubnetMask);
         string router = string.IsNullOrWhiteSpace(config.Gateway) ? config.IpAddress : config.Gateway;
-        return RunCommandSuccess("networksetup", "-setmanual", port, config.IpAddress, config.SubnetMask, router);
+        bool saved = RunCommandSuccess("networksetup", "-setmanual", port, config.IpAddress, config.SubnetMask, router);
+        return direct || saved;
     }
 
     private static bool RestoreLinuxConfiguration(AdapterIpConfiguration config)
@@ -282,6 +365,10 @@ public static class NetworkHelper
 
     private static bool SetStaticIpWindows(string adapterName, string ip, string netmask)
     {
+        // netsh fails ("object already exists") when the address is already set - treat as success.
+        var existing = FindInterface(adapterName);
+        if (existing != null && existing.GetIPProperties().UnicastAddresses.Any(a => a.Address.ToString() == ip))
+            return true;
         try
         {
             return RunCommandSuccess("netsh", "interface", "ip", "set", "address",
@@ -294,28 +381,27 @@ public static class NetworkHelper
     {
         try
         {
-            string? hardwarePort = ResolveMacHardwarePort(adapterName);
-
-            if (hardwarePort != null)
-            {
-                string router = string.IsNullOrWhiteSpace(gateway) ? ip : gateway;
-                if (RunCommandSuccess("networksetup", "-setmanual", hardwarePort, ip, netmask, router))
-                    return true;
-            }
-
+            // `networksetup -setmanual` needs a router, and the old code used this Mac's own IP.
+            // If Ethernet sits above Wi-Fi in the service order, that makes the show network
+            // the default route and cuts the Mac's internet. `ipconfig set ... MANUAL` assigns
+            // the address with no router. Restore re-applies the service's saved config.
             string bsdName = adapterName.Contains(" - ", StringComparison.Ordinal)
                 ? adapterName.Split(" - ", StringSplitOptions.None)[0].Trim()
                 : adapterName;
+            if (RunCommandSuccess("ipconfig", "set", bsdName, "MANUAL", ip, netmask))
+                return true;
             return RunCommandSuccess("ifconfig", bsdName, ip, "netmask", netmask);
         }
         catch { return false; }
     }
 
     private static string? ResolveMacHardwarePort(string nameOrBsd)
+        => HardwarePortFor(RunCommand("networksetup", "-listallhardwareports"), nameOrBsd);
+
+    private static string? HardwarePortFor(string output, string nameOrBsd)
     {
         try
         {
-            string output = RunCommand("networksetup", "-listallhardwareports");
             var lines = output.Split('\n', StringSplitOptions.TrimEntries);
 
             string? currentPort = null;

@@ -15,6 +15,7 @@ rm -f /Applications/Run\ MYLan.command
 rm -f /usr/local/bin/mylan
 rm -rf /Library/Application\ Support/MYLan
 rm -rf /var/root/.local/share/MYLan 2>/dev/null || true
+rm -rf "/var/root/Library/Application Support/MYLan" 2>/dev/null || true
 rm -rf "$HOME/Library/Application Support/MYLan" 2>/dev/null || true
 
 if [[ -n "${SUDO_USER:-}" && "$SUDO_USER" != "root" ]]; then

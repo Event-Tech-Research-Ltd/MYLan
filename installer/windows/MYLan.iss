@@ -6,7 +6,7 @@
 
 #define MyAppName "MYLan DHCP Field Server"
 #define MyAppShortName "MYLan"
-#define MyAppVersion "2.1.0"
+#define MyAppVersion "2.2.0"
 #define MyAppPublisher "Event Tech Research Ltd"
 #define MyAppExeName "MYLan.exe"
 #define MyAppURL "https://github.com/Event-Tech-Research-Ltd/MYLan"
@@ -51,6 +51,8 @@ Name: "{autoprograms}\MYLan"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{a
 Name: "{autodesktop}\MYLan"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
+; Delete first so reinstalls/upgrades do not pile up duplicate rules.
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""MYLan DHCP Server"""; Flags: runhidden; Tasks: firewall
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""MYLan DHCP Server"" dir=in action=allow program=""{app}\{#MyAppExeName}"" protocol=UDP localport=67 enable=yes"; Flags: runhidden; Tasks: firewall
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch MYLan"; Flags: nowait postinstall skipifsilent
 

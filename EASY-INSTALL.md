@@ -7,7 +7,7 @@ Use this when you want to give non-technical users one simple file to install MY
 Give users this file:
 
 ```text
-installer-output\windows\MYLan-Setup-2.1.0-win-x64.exe
+installer-output\windows\MYLan-Setup-2.2.0-win-x64.exe
 ```
 
 They install it by double-clicking the setup file and following the wizard.
@@ -33,7 +33,7 @@ You now have two Mac release options.
 If building from Windows, give users this zip:
 
 ```text
-installer-output/macos/MYLan-2.1.0-macos-universal-ready.zip
+installer-output/macos/MYLan-2.2.0-macos-universal-ready.zip
 ```
 
 It contains both Apple Silicon and Intel builds. Users install it by:
@@ -46,8 +46,8 @@ It contains both Apple Silicon and Intel builds. Users install it by:
 If building on a Mac, you can create DMG files:
 
 ```text
-installer-output/macos/MYLan-2.1.0-osx-arm64.dmg
-installer-output/macos/MYLan-2.1.0-osx-x64.dmg
+installer-output/macos/MYLan-2.2.0-osx-arm64.dmg
+installer-output/macos/MYLan-2.2.0-osx-x64.dmg
 ```
 
 Most newer Macs use `osx-arm64`. Older Intel Macs use `osx-x64`.

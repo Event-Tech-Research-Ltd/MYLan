@@ -22,7 +22,7 @@ This will:
 
 1. Publish the standalone Windows x64 app.
 2. Build an installer using `installer/windows/MYLan.iss`.
-3. Place the installer at `installer-output\windows\MYLan-Setup-2.1.0-win-x64.exe`.
+3. Place the installer at `installer-output\windows\MYLan-Setup-2.2.0-win-x64.exe`.
 
 The installer:
 
@@ -53,7 +53,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build-macos-zip-windows.ps
 Output:
 
 ```text
-installer-output/macos/MYLan-2.1.0-macos-universal-ready.zip
+installer-output/macos/MYLan-2.2.0-macos-universal-ready.zip
 ```
 
 This zip contains both `MYLan-arm64.app` and `MYLan-x64.app`, plus `Install MYLan.command`, `Run MYLan.command`, `Uninstall MYLan.command`, and `README-FIRST.txt`.
@@ -124,8 +124,8 @@ Create DMG files:
 Outputs:
 
 ```text
-installer-output/macos/MYLan-2.1.0-osx-x64.dmg
-installer-output/macos/MYLan-2.1.0-osx-arm64.dmg
+installer-output/macos/MYLan-2.2.0-osx-x64.dmg
+installer-output/macos/MYLan-2.2.0-osx-arm64.dmg
 ```
 
 Each DMG contains `Install MYLan.command`, `Run MYLan.command`, `Uninstall MYLan.command`, the app bundle, an Applications shortcut, and `README-FIRST.txt`.

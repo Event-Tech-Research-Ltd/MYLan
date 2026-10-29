@@ -22,9 +22,11 @@ fi
 
 rm -rf "$APP_DEST"
 cp -R "$APP_SOURCE" "$APP_DEST"
+xattr -dr com.apple.quarantine "$APP_DEST" 2>/dev/null || true
 chown -R root:wheel "$APP_DEST"
 chmod -R go+rX "$APP_DEST"
 chmod +x "$APP_DEST/Contents/MacOS/MYLan"
+codesign --force --deep --sign - "$APP_DEST" >/dev/null 2>&1 || echo "Note: ad-hoc signing failed; MYLan may still run."
 
 mkdir -p /usr/local/bin
 cat > "$CLI_DEST" <<'RUNNER'

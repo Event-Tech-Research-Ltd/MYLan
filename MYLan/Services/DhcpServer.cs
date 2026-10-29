@@ -1,5 +1,8 @@
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.Json;
 
 namespace DhcpFieldServer.Services;
@@ -41,9 +44,10 @@ public enum LeaseState
         private readonly IPAddress _poolStart;
         private readonly IPAddress _poolEnd;
         private readonly IPAddress _subnetMask;
-        private readonly IPAddress _routerIp;
-        private readonly IPAddress _dnsIp;
+        private readonly IPAddress? _routerIp;   // null = option 3 not sent
+        private readonly IPAddress? _dnsIp;      // null = option 6 not sent
         private readonly IPAddress _broadcastIp;
+        private readonly string? _interfaceName;
         private readonly int _leaseSeconds;
 
         private readonly Dictionary<string, DhcpLease> _leases = new();
@@ -81,18 +85,20 @@ public enum LeaseState
         }
 
         public DhcpServer(string serverIpAddress, string poolStart, string poolEnd,
-                          string subnetMask, string routerIp, string dnsIp,
-                          int leaseHours = 8, string? leaseFilePath = null)
+                          string subnetMask, string? routerIp, string? dnsIp,
+                          int leaseHours = 8, string? leaseFilePath = null,
+                          string? interfaceName = null)
         {
             _serverIp    = ParseIpv4(serverIpAddress, nameof(serverIpAddress));
             _poolStart   = ParseIpv4(poolStart, nameof(poolStart));
             _poolEnd     = ParseIpv4(poolEnd, nameof(poolEnd));
             _subnetMask  = ParseIpv4(subnetMask, nameof(subnetMask));
-            _routerIp    = ParseIpv4(routerIp, nameof(routerIp));
-            _dnsIp       = ParseIpv4(dnsIp, nameof(dnsIp));
+            _routerIp    = string.IsNullOrWhiteSpace(routerIp) ? null : ParseIpv4(routerIp, nameof(routerIp));
+            _dnsIp       = string.IsNullOrWhiteSpace(dnsIp) ? null : ParseIpv4(dnsIp, nameof(dnsIp));
             _broadcastIp = GetBroadcastAddress(_serverIp, _subnetMask);
             _leaseSeconds = leaseHours * 3600;
             _leaseFilePath = leaseFilePath;
+            _interfaceName = interfaceName;
 
             if (CompareIp(_poolStart, _poolEnd) > 0)
                 throw new ArgumentException("Pool start must be less than or equal to pool end.");
@@ -111,10 +117,17 @@ public enum LeaseState
 
             try
             {
-                _udp = new UdpClient();
-                _udp.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
-                _udp.Client.Bind(new IPEndPoint(IPAddress.Any, 67));
+                // Exclusive (no SO_REUSEADDR): a second MYLan, macOS Internet Sharing (bootpd)
+                // or Windows ICS must make Start() fail loudly, not silently share port 67.
+                _udp = new UdpClient(AddressFamily.InterNetwork);
+                _udp.ExclusiveAddressUse = true;
                 _udp.EnableBroadcast = true;
+                BindToServerInterface(_udp.Client);
+            }
+            catch (SocketException ex) when (ex.SocketErrorCode == SocketError.AddressNotAvailable)
+            {
+                throw new InvalidOperationException(
+                    $"{_serverIp} is not assigned to the selected adapter yet. Check the cable/switch and try again.", ex);
             }
             catch (SocketException ex) when (ex.SocketErrorCode == SocketError.AddressAlreadyInUse)
             {
@@ -133,7 +146,7 @@ public enum LeaseState
             _listenerThread = new Thread(ListenLoop) { IsBackground = true };
             _listenerThread.Start();
 
-            Log?.Invoke($"DHCP server started on UDP port 67. Replies broadcast to {_broadcastIp}.");
+            Log?.Invoke($"DHCP server started on UDP port 67. Bound to {_interfaceName ?? _serverIp.ToString()}.");
         }
 
         public void Stop()
@@ -260,7 +273,9 @@ public enum LeaseState
                 {
                     if (!IsInPool(requestedIp))
                     {
-                        if (requestNamesThisServer)
+                        // RFC 2131 4.3.2: INIT-REBOOT client whose address is on the wrong
+                        // network MUST be NAKed, otherwise it stalls until its own timeout.
+                        if (requestNamesThisServer || !IsInServerSubnet(requestedIp))
                         {
                             Log?.Invoke($"[NAK] {mac} requested {requestedIp} - outside pool.");
                             SendNak(xid, macBytes);
@@ -339,8 +354,11 @@ public enum LeaseState
 
             lock (_leaseLock)
             {
-                IPAddress? declinedIp = options.RequestedIp;
-                if (declinedIp == null && _leases.TryGetValue(mac, out var lease))
+                // Only quarantine the address this MAC was actually given; otherwise any
+                // client could DECLINE arbitrary pool addresses and starve the pool.
+                IPAddress? declinedIp = null;
+                if (_leases.TryGetValue(mac, out var lease) &&
+                    (options.RequestedIp == null || options.RequestedIp.Equals(lease.GetIp())))
                     declinedIp = lease.GetIp();
 
                 if (declinedIp != null)
@@ -542,9 +560,8 @@ public enum LeaseState
             Array.Copy(_serverIp.GetAddressBytes(), 0, packet, idx, 4); idx += 4;
             packet[idx++] = 255;
 
-            byte[] final = new byte[idx];
-            Array.Copy(packet, final, idx);
-            try { SendToClientPort(final); }
+            // Full 300-byte BOOTP minimum (RFC 951/1542); some embedded clients drop shorter replies.
+            try { SendToClientPort(packet); }
             catch (ObjectDisposedException) { }
             Log?.Invoke("Sent NAK.");
         }
@@ -569,10 +586,18 @@ public enum LeaseState
             Array.Copy(_serverIp.GetAddressBytes(), 0, packet, idx, 4); idx += 4;
             packet[idx++] = 1; packet[idx++] = 4;
             Array.Copy(_subnetMask.GetAddressBytes(), 0, packet, idx, 4); idx += 4;
-            packet[idx++] = 3; packet[idx++] = 4;
-            Array.Copy(_routerIp.GetAddressBytes(), 0, packet, idx, 4); idx += 4;
-            packet[idx++] = 6; packet[idx++] = 4;
-            Array.Copy(_dnsIp.GetAddressBytes(), 0, packet, idx, 4); idx += 4;
+            // Router/DNS are optional: the server laptop does not route, so advertising it
+            // as a gateway sends dual-homed clients' internet traffic into a dead end.
+            if (_routerIp != null)
+            {
+                packet[idx++] = 3; packet[idx++] = 4;
+                Array.Copy(_routerIp.GetAddressBytes(), 0, packet, idx, 4); idx += 4;
+            }
+            if (_dnsIp != null)
+            {
+                packet[idx++] = 6; packet[idx++] = 4;
+                Array.Copy(_dnsIp.GetAddressBytes(), 0, packet, idx, 4); idx += 4;
+            }
             packet[idx++] = 28; packet[idx++] = 4;
             Array.Copy(_broadcastIp.GetAddressBytes(), 0, packet, idx, 4); idx += 4;
             packet[idx++] = 51; packet[idx++] = 4;
@@ -582,14 +607,57 @@ public enum LeaseState
             packet[idx++] = (byte)(_leaseSeconds & 0xFF);
             packet[idx++] = 255;
 
-            byte[] final = new byte[idx];
-            Array.Copy(packet, final, idx);
-            return final;
+            // Full 300-byte BOOTP minimum (RFC 951/1542); some embedded clients drop shorter replies.
+            return packet;
+        }
+
+        /// <summary>
+        /// Restricts the socket to the server adapter so MYLan never answers DHCP on other
+        /// networks (venue Wi-Fi/LAN) and its broadcasts leave via the right adapter.
+        ///  Windows: bind to the adapter's unicast IP (Windows still delivers broadcasts to it).
+        ///  Linux:   bind 0.0.0.0 + SO_BINDTODEVICE.
+        ///  macOS:   bind 0.0.0.0 + IP_BOUND_IF (BSD does not deliver broadcasts to a
+        ///           socket bound to a unicast address).
+        /// </summary>
+        private void BindToServerInterface(Socket socket)
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                socket.Bind(new IPEndPoint(_serverIp, 67));
+                return;
+            }
+
+            if (string.IsNullOrEmpty(_interfaceName))
+                throw new InvalidOperationException("No adapter name supplied; refusing to listen on every interface.");
+
+            if (OperatingSystem.IsLinux())
+            {
+                const int SOL_SOCKET = 1, SO_BINDTODEVICE = 25;
+                socket.SetRawSocketOption(SOL_SOCKET, SO_BINDTODEVICE, Encoding.ASCII.GetBytes(_interfaceName + "\0"));
+            }
+            else if (OperatingSystem.IsMacOS())
+            {
+                const int IPPROTO_IP = 0, IP_BOUND_IF = 25;
+                var nic = NetworkInterface.GetAllNetworkInterfaces().FirstOrDefault(n => n.Name == _interfaceName)
+                          ?? throw new InvalidOperationException($"Adapter {_interfaceName} not found.");
+                int index = nic.GetIPProperties().GetIPv4Properties().Index;
+                socket.SetRawSocketOption(IPPROTO_IP, IP_BOUND_IF, BitConverter.GetBytes(index));
+            }
+            else
+            {
+                throw new PlatformNotSupportedException("Interface pinning not implemented for this OS.");
+            }
+
+            socket.Bind(new IPEndPoint(IPAddress.Any, 67));
         }
 
         private void SendToClientPort(byte[] packet)
         {
-            _udp?.Send(packet, packet.Length, new IPEndPoint(_broadcastIp, 68));
+            // RFC 2131 4.1: client has no address yet, so reply to 255.255.255.255.
+            // A subnet broadcast (192.168.1.255) is dropped by clients whose IP stack has no
+            // address yet (verified with a Linux socket client). The socket is pinned to the
+            // server adapter, so the limited broadcast leaves via that adapter.
+            _udp?.Send(packet, packet.Length, new IPEndPoint(IPAddress.Broadcast, 68));
         }
 
         // ── Lease Persistence ────────────────────────────────

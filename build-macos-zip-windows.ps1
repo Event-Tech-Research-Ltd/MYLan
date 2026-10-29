@@ -3,7 +3,7 @@
 
 $ErrorActionPreference = "Stop"
 
-$Version = "2.1.0"
+$Version = "2.2.0"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $OutputRoot = Join-Path $Root "installer-output\macos"
 $ZipPath = Join-Path $OutputRoot "MYLan-$Version-macos-universal-ready.zip"
@@ -108,9 +108,13 @@ echo "macOS will ask for your administrator password."
 
 sudo rm -rf "$APP_DEST"
 sudo cp -R "$APP_SOURCE" "$APP_DEST"
+# cp keeps the download quarantine flag; Gatekeeper then blocks the unsigned binary.
+sudo xattr -dr com.apple.quarantine "$APP_DEST" 2>/dev/null || true
 sudo chown -R root:wheel "$APP_DEST"
 sudo chmod -R go+rX "$APP_DEST"
 sudo chmod +x "$APP_DEST/Contents/MacOS/MYLan"
+# Ad-hoc sign the bundle on this Mac so Gatekeeper/launch checks accept it.
+sudo codesign --force --deep --sign - "$APP_DEST" >/dev/null 2>&1 || echo "Note: ad-hoc signing failed; MYLan may still run."
 
 sudo mkdir -p /usr/local/bin
 TMP_RUNNER="$(mktemp)"
@@ -158,6 +162,7 @@ sudo rm -f "/Applications/Run MYLan.command"
 sudo rm -f /usr/local/bin/mylan
 sudo rm -rf "/Library/Application Support/MYLan" 2>/dev/null || true
 sudo rm -rf /var/root/.local/share/MYLan 2>/dev/null || true
+sudo rm -rf "/var/root/Library/Application Support/MYLan" 2>/dev/null || true
 
 echo
 echo "MYLan removed."
@@ -194,9 +199,11 @@ For public distribution, sign and notarise the app/DMG with an Apple Developer I
 
 Write-Host "Publishing macOS Intel..."
 dotnet publish (Join-Path $Root "MYLan\MYLan.csproj") -c Release -r osx-x64 --self-contained true /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true -o (Join-Path $Root "release\osx-x64")
+if ($LASTEXITCODE -ne 0) { throw "dotnet publish osx-x64 failed ($LASTEXITCODE)." }
 
 Write-Host "Publishing macOS Apple Silicon..."
 dotnet publish (Join-Path $Root "MYLan\MYLan.csproj") -c Release -r osx-arm64 --self-contained true /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true -o (Join-Path $Root "release\osx-arm64")
+if ($LASTEXITCODE -ne 0) { throw "dotnet publish osx-arm64 failed ($LASTEXITCODE)." }
 
 New-MacAppBundle -Rid "osx-x64"
 New-MacAppBundle -Rid "osx-arm64"
@@ -225,6 +232,32 @@ function Get-ZipUnixMode {
   }
 
   return 33188 # 0100644
+}
+
+# ZipArchive on Windows stamps every entry "made by MS-DOS", so unzip/Archive Utility
+# ignore the Unix mode bits set above and the .command files arrive non-executable.
+# Rewrite the "version made by" host byte to 3 (Unix) in each central directory record.
+function Set-ZipMadeByUnix {
+  param([Parameter(Mandatory=$true)][string]$ZipPath)
+
+  $bytes = [System.IO.File]::ReadAllBytes($ZipPath)
+  $eocd = -1
+  for ($i = $bytes.Length - 22; $i -ge 0; $i--) {
+    if ($bytes[$i] -eq 0x50 -and $bytes[$i+1] -eq 0x4B -and $bytes[$i+2] -eq 0x05 -and $bytes[$i+3] -eq 0x06) { $eocd = $i; break }
+  }
+  if ($eocd -lt 0) { throw "Zip end-of-central-directory record not found: $ZipPath" }
+
+  $count = [BitConverter]::ToUInt16($bytes, $eocd + 10)
+  $pos = [int][BitConverter]::ToUInt32($bytes, $eocd + 16)
+  for ($n = 0; $n -lt $count; $n++) {
+    if ([BitConverter]::ToUInt32($bytes, $pos) -ne 0x02014b50) { throw "Bad central directory record at offset $pos" }
+    $bytes[$pos + 5] = 3
+    $nameLen = [BitConverter]::ToUInt16($bytes, $pos + 28)
+    $extraLen = [BitConverter]::ToUInt16($bytes, $pos + 30)
+    $commentLen = [BitConverter]::ToUInt16($bytes, $pos + 32)
+    $pos += 46 + $nameLen + $extraLen + $commentLen
+  }
+  [System.IO.File]::WriteAllBytes($ZipPath, $bytes)
 }
 
 function New-ZipWithMacModes {
@@ -275,6 +308,7 @@ function New-ZipWithMacModes {
 }
 
 New-ZipWithMacModes -SourceDirectory $releaseDir -DestinationZip $ZipPath
+Set-ZipMadeByUnix -ZipPath $ZipPath
 
 Write-Host "Done. Mac-ready zip:"
 Write-Host $ZipPath

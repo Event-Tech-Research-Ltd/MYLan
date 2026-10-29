@@ -15,5 +15,5 @@ if errorlevel 1 (
 echo.
 echo Done.
 echo Installer:
-echo installer-output\windows\MYLan-Setup-2.1.0-win-x64.exe
+echo installer-output\windows\MYLan-Setup-2.2.0-win-x64.exe
 pause

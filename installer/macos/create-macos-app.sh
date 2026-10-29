@@ -8,7 +8,7 @@ set -euo pipefail
 
 APP_NAME="MYLan"
 APP_DISPLAY_NAME="MYLan DHCP Field Server"
-VERSION="2.1.0"
+VERSION="2.2.0"
 BUNDLE_ID="io.eventresearch.mylan"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
@@ -54,6 +54,17 @@ create_app() {
 </dict>
 </plist>
 PLIST
+
+  # Sign the bundle. Default: ad-hoc (runs on this Mac / after install).
+  # Public release: SIGN_IDENTITY="Developer ID Application: Name (TEAMID)" ./CREATE-MACOS-DMGS.command
+  if [[ -n "${SIGN_IDENTITY:-}" ]]; then
+    codesign --force --deep --options runtime --timestamp \
+      --entitlements "$ROOT_DIR/installer/macos/MYLan.entitlements" \
+      --sign "$SIGN_IDENTITY" "$out"
+  else
+    codesign --force --deep --sign - "$out"
+  fi
+  codesign --verify --deep --strict "$out"
 
   echo "Created: $out"
 }

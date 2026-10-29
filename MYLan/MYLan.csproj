@@ -15,7 +15,7 @@
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <RuntimeIdentifiers>win-x64;osx-x64;osx-arm64</RuntimeIdentifiers>
 
-    <Version>2.1.0</Version>
+    <Version>2.2.0</Version>
     <Authors>Rob Handyside - Event Tech Research Ltd</Authors>
     <Product>MYLan DHCP Field Server</Product>
     <Description>A lightweight portable DHCP server for production networks</Description>

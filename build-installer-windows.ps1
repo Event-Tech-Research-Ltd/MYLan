@@ -14,11 +14,13 @@ dotnet publish .\MYLan\MYLan.csproj `
   /p:PublishSingleFile=true `
   /p:IncludeNativeLibrariesForSelfExtract=true `
   -o .\release\win-x64
+# Native exit codes do not trip $ErrorActionPreference in Windows PowerShell 5.1.
+if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed with exit code $LASTEXITCODE." }
 
 $possibleIscc = @(
-  "$env:ProgramFiles(x86)\Inno Setup 7\ISCC.exe",
+  "${env:ProgramFiles(x86)}\Inno Setup 7\ISCC.exe",
   "$env:ProgramFiles\Inno Setup 7\ISCC.exe",
-  "$env:ProgramFiles(x86)\Inno Setup 6\ISCC.exe",
+  "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
   "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
 )
 
@@ -34,7 +36,7 @@ if ($LASTEXITCODE -ne 0) {
   throw "Inno Setup failed with exit code $LASTEXITCODE."
 }
 
-$expectedInstaller = ".\installer-output\windows\MYLan-Setup-2.1.0-win-x64.exe"
+$expectedInstaller = ".\installer-output\windows\MYLan-Setup-2.2.0-win-x64.exe"
 if (-not (Test-Path $expectedInstaller)) {
   throw "Inno Setup finished but the expected installer was not created: $expectedInstaller"
 }

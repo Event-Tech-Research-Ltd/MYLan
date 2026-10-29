@@ -58,7 +58,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build-macos-zip-windows.ps
 Output:
 
 ```text
-installer-output\macos\MYLan-2.1.0-macos-universal-ready.zip
+installer-output\macos\MYLan-2.2.0-macos-universal-ready.zip
 ```
 
 Publish Windows x64:
@@ -84,7 +84,7 @@ Build the Windows installer from the repository root:
 Output:
 
 ```text
-installer-output\windows\MYLan-Setup-2.1.0-win-x64.exe
+installer-output\windows\MYLan-Setup-2.2.0-win-x64.exe
 ```
 
 The installer:
@@ -151,14 +151,25 @@ The DHCP flow is:
 MYLan includes the following DHCP options in replies:
 
 - 1: Subnet mask
-- 3: Router/gateway
-- 6: DNS server
+- 3: Router/gateway (only if the Gateway field is filled in; blank by default)
+- 6: DNS server (only if the DNS field is filled in; blank by default)
 - 28: Broadcast address
 - 51: Lease time
 - 53: DHCP message type
 - 54: DHCP server identifier
 
+MYLan only listens on, and replies through, the selected adapter. Wi-Fi adapters are
+not offered, and Start is refused if another adapter is already on the same subnet.
+
 ## Troubleshooting
+
+`... is already on the 192.168.1.1/255.255.255.0 network`
+
+Another adapter (usually venue Wi-Fi) uses the same subnet. Disconnect it, or change Server IP/Pool to a different subnet (e.g. 10.10.10.1).
+
+macOS says the app or a `.command` file "cannot be opened"
+
+Unsigned/un-notarised builds are blocked on first open. Open System Settings → Privacy & Security and click "Open Anyway", or build with `SIGN_IDENTITY`/`NOTARY_PROFILE` set (see `installer/macos/create-macos-app.sh`).
 
 `Access denied binding to port 67`
 
