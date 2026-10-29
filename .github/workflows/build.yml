@@ -1,0 +1,83 @@
+name: Build MYLan installers
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows x64 installer
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+      - name: Ensure Inno Setup is available
+        shell: pwsh
+        run: |
+          $paths = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 7\ISCC.exe",
+            "$env:ProgramFiles\Inno Setup 7\ISCC.exe",
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
+          )
+          if (-not ($paths | Where-Object { Test-Path $_ })) {
+            choco install innosetup --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed.' }
+          }
+      - name: Build Windows installer
+        shell: pwsh
+        run: ./build-installer-windows.ps1
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: MYLan-Windows-x64-installer
+          path: installer-output/windows/*.exe
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload Windows portable build
+        uses: actions/upload-artifact@v4
+        with:
+          name: MYLan-Windows-x64-portable
+          path: release/win-x64/
+          if-no-files-found: error
+          retention-days: 30
+
+  macos:
+    name: macOS Intel and Apple Silicon DMGs
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+      - name: Publish both Mac architectures
+        run: bash ./publish-macos.sh
+      - name: Create and verify application bundles
+        run: bash ./installer/macos/create-macos-app.sh
+      - name: Create DMGs
+        run: bash ./installer/macos/create-dmg-macos.sh
+      - name: Verify both DMG files
+        run: |
+          hdiutil verify installer-output/macos/MYLan-2.2.0-osx-x64.dmg
+          hdiutil verify installer-output/macos/MYLan-2.2.0-osx-arm64.dmg
+      - name: Upload Intel Mac DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: MYLan-macOS-Intel-DMG
+          path: installer-output/macos/*-osx-x64.dmg
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload Apple Silicon Mac DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: MYLan-macOS-Apple-Silicon-DMG
+          path: installer-output/macos/*-osx-arm64.dmg
+          if-no-files-found: error
+          retention-days: 30
